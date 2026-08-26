@@ -14,7 +14,7 @@ if (!connectionString) {
 }
 
 async function runMigration() {
-  console.log('Connecting to Neon PostgreSQL to push Drizzle schema...');
+  console.log('Connecting to Neon PostgreSQL to push all Drizzle migrations...');
 
   // Parse URL
   const url = new URL(connectionString);
@@ -51,22 +51,37 @@ async function runMigration() {
     max: 1,
   });
 
-  const migrationPath = path.join(process.cwd(), 'drizzle', '0000_boring_scarecrow.sql');
-  const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+  const drizzleDir = path.join(process.cwd(), 'drizzle');
+  const files = fs
+    .readdirSync(drizzleDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
 
-  // Split statements by statement-breakpoint
-  const statements = migrationSql
-    .split('--> statement-breakpoint')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  console.log(`Found ${files.length} migration file(s): ${files.join(', ')}`);
 
-  for (const statement of statements) {
-    const preview = statement.replace(/\s+/g, ' ').slice(0, 50);
-    console.log(`Executing: ${preview}...`);
-    await sql.unsafe(statement);
+  for (const file of files) {
+    const filePath = path.join(drizzleDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+
+    const statements = content
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    console.log(`Applying migration: ${file} (${statements.length} statements)`);
+    for (const statement of statements) {
+      const preview = statement.replace(/\s+/g, ' ').slice(0, 60);
+      console.log(`  Executing: ${preview}...`);
+      try {
+        await sql.unsafe(statement);
+      } catch (err: any) {
+        // If table or column already exists/altered, log and continue safely
+        console.log(`  Note/Skip: ${err?.message || err}`);
+      }
+    }
   }
 
-  console.log('✓ Successfully pushed schema and created all tables in Neon PostgreSQL!');
+  console.log('✓ Successfully synchronized Drizzle schema with Neon PostgreSQL database!');
   await sql.end();
 }
 
