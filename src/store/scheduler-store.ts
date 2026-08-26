@@ -32,6 +32,7 @@ interface SchedulerStore {
   selectJob: (id: string) => void;
   setFormName: (name: string) => void;
   updateFormConfig: (partial: Partial<ScheduleJobConfig>) => void;
+  updateTargetRequest: (partial: Partial<ApiRequest>) => void;
   prepareNewJob: (request: ApiRequest, envVars: EnvironmentVariable[]) => void;
   prepareEditJob: (id: string) => void;
   saveJob: () => string;
@@ -166,6 +167,18 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   selectJob: (id) => set({ selectedJobId: id }),
 
   setFormName: (name) => set({ formName: name }),
+
+  updateTargetRequest: (partial) =>
+    set((state) => {
+      if (!state.targetRequest) return state;
+      return {
+        targetRequest: {
+          ...state.targetRequest,
+          ...partial,
+          updatedAt: Date.now(),
+        },
+      };
+    }),
 
   updateFormConfig: (partial) =>
     set((state) => {

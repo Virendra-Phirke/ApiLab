@@ -9,6 +9,8 @@ import {
 import { useSchedulerStore } from '@/store/scheduler-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { TimeUnit } from '@/types/scheduler';
+import { HttpMethod } from '@/types/request';
+import { MethodSelector } from '../request/method-selector';
 import {
   Clock,
   Play,
@@ -18,6 +20,7 @@ import {
   ShieldAlert,
   Save,
   Tag,
+  Globe,
 } from 'lucide-react';
 
 const INTERVAL_PRESETS: { label: string; value: number; unit: TimeUnit }[] = [
@@ -58,6 +61,7 @@ export function SchedulerModal() {
     formConfig,
     updateFormConfig,
     targetRequest,
+    updateTargetRequest,
     editingJobId,
     saveJob,
     startJob,
@@ -66,15 +70,8 @@ export function SchedulerModal() {
   const { setMainView } = useWorkspaceStore();
   const [customDateTime, setCustomDateTime] = useState('');
 
-  const methodColors: Record<string, string> = {
-    GET: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    POST: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-    PUT: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-    PATCH: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-    DELETE: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-    HEAD: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
-    OPTIONS: 'bg-pink-500/15 text-pink-400 border-pink-500/30',
-  };
+  const currentMethod = (targetRequest?.method || 'GET') as HttpMethod;
+  const currentUrl = targetRequest?.url || '';
 
   const handleSaveAndStart = () => {
     const newId = saveJob();
@@ -102,11 +99,8 @@ export function SchedulerModal() {
               <DialogTitle className="text-sm font-bold text-foreground">
                 {editingJobId ? 'Edit Scheduled Request' : 'Configure New Scheduled Request'}
               </DialogTitle>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-md">
-                Target:{' '}
-                <span className="font-mono text-foreground font-semibold">
-                  {targetRequest?.method} {targetRequest?.url || 'No URL configured'}
-                </span>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Set up automated API calls with customizable method, endpoint, and intervals.
               </p>
             </div>
           </div>
@@ -114,7 +108,7 @@ export function SchedulerModal() {
 
         {/* Configuration Form Body */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
-          {/* 1. Schedule Name Input */}
+          {/* 1. Schedule Job Name Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
               <Tag className="h-3.5 w-3.5 text-primary" />
@@ -130,7 +124,33 @@ export function SchedulerModal() {
             />
           </div>
 
-          {/* 2. Mode Select (3 Options: Interval 1m-15h, Daily, One-Time) */}
+          {/* 2. Target API Endpoint: Method Selector + API URL Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <Globe className="h-3.5 w-3.5 text-primary" />
+              <span>Target API Method & Endpoint URL</span>
+            </label>
+
+            <div className="flex items-center gap-2 p-1.5 rounded-xl bg-surface-card border border-border/30">
+              {/* Method Selector Dropdown */}
+              <MethodSelector
+                value={currentMethod}
+                onChange={(method) => updateTargetRequest({ method })}
+              />
+
+              {/* URL Input Bar */}
+              <input
+                type="text"
+                value={currentUrl}
+                onChange={(e) => updateTargetRequest({ url: e.target.value })}
+                placeholder="Enter API URL (e.g. https://api.open-meteo.com/v1/forecast or https://api.example.com)"
+                className="w-full h-9 px-3 rounded-lg bg-surface-input text-foreground text-xs font-mono placeholder:text-muted-foreground/40 outline-none border border-border/20 focus:border-primary/50 transition-colors"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+
+          {/* 3. Execution Frequency Mode Select (3 Options: Interval 1m-15h, Daily, One-Time) */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
               Execution Frequency
@@ -354,7 +374,7 @@ export function SchedulerModal() {
             </div>
           )}
 
-          {/* 3. Error Recovery & Retry Strategy Box */}
+          {/* 4. Error Recovery & Retry Strategy Box */}
           <div className="p-4 rounded-xl bg-surface-card border border-border/20 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
