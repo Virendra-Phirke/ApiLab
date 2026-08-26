@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1787744670690,
-      "tag": "0000_boring_scarecrow",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1787745216469,
-      "tag": "0001_daily_professor_monster",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1787745550090,
-      "tag": "0002_silky_rogue",
+      "when": 1787746049930,
+      "tag": "0000_empty_mulholland_black",
       "breakpoints": true
     }
   ]

@@ -1,6 +1,5 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { username } from 'better-auth/plugins';
 import { db, schema } from '@/db';
 
 export const auth = betterAuth({
@@ -18,8 +17,6 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    requireEmailVerification: false,
   },
-  plugins: [
-    username(),
-  ],
 });

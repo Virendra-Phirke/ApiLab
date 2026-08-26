@@ -33,9 +33,7 @@ const originalConnect = pg.Client.prototype.connect;
 };
 
 const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.DATABASE_TOKEN ||
-  '';
+  process.env.DATABASE_URL || '';
 
 let pool: Pool;
 

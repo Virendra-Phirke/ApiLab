@@ -9,7 +9,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { signIn, signUp } from '@/lib/auth-client';
-import { LogIn, UserPlus, Eye, EyeOff, Loader2, Zap, Lock, User } from 'lucide-react';
+import { LogIn, UserPlus, Eye, EyeOff, Loader2, Zap, Lock, Mail, User } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface AuthModalProps {
@@ -24,12 +24,14 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Form fields (Username + Password only)
-  const [username, setUsername] = useState('');
+  // Form fields
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const resetForm = () => {
-    setUsername('');
+    setName('');
+    setEmail('');
     setPassword('');
     setError(null);
     setLoading(false);
@@ -42,9 +44,9 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUser = username.trim();
-    if (!cleanUser || !password) {
-      setError('Please enter your username and password.');
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setError('Please enter your email and password.');
       return;
     }
 
@@ -52,27 +54,18 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
     setError(null);
 
     try {
-      // First attempt: username signin
-      let res = await (signIn as any).username({
-        username: cleanUser,
+      const res = await signIn.email({
+        email: cleanEmail,
         password,
       });
 
-      // Fallback: email signin with internal domain alias
       if (res?.error) {
-        res = await signIn.email({
-          email: `${cleanUser.toLowerCase()}@apilab.local`,
-          password,
-        });
-      }
-
-      if (res?.error) {
-        setError(res.error.message || 'Invalid username or password.');
+        setError(res.error.message || 'Invalid email or password.');
         toast.error(res.error.message || 'Sign in failed');
       } else {
-        toast.success(`Welcome back, ${cleanUser}!`);
+        toast.success(`Welcome back!`);
         handleOpenChange(false);
-        setTimeout(() => window.location.reload(), 350);
+        setTimeout(() => window.location.reload(), 300);
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication service error. Please try again.');
@@ -84,14 +77,9 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUser = username.trim();
-    if (!cleanUser || !password) {
-      setError('Please enter a username and password.');
-      return;
-    }
-
-    if (cleanUser.length < 3) {
-      setError('Username must be at least 3 characters.');
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setError('Please enter an email and password.');
       return;
     }
 
@@ -104,20 +92,20 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
     setError(null);
 
     try {
+      const displayName = name.trim() || cleanEmail.split('@')[0];
       const res = await signUp.email({
-        email: `${cleanUser.toLowerCase()}@apilab.local`,
+        email: cleanEmail,
         password,
-        name: cleanUser,
-        username: cleanUser,
-      } as any);
+        name: displayName,
+      });
 
       if (res?.error) {
-        setError(res.error.message || 'Sign up failed. Username may already be taken.');
+        setError(res.error.message || 'Sign up failed. Email may already be in use.');
         toast.error(res.error.message || 'Sign up failed');
       } else {
-        toast.success(`Account created! Welcome to ApiLab, ${cleanUser}.`);
+        toast.success(`Account created! Welcome to ApiLab, ${displayName}.`);
         handleOpenChange(false);
-        setTimeout(() => window.location.reload(), 350);
+        setTimeout(() => window.location.reload(), 300);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to create account.');
@@ -194,17 +182,17 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
           )}
 
           {mode === 'signin' ? (
-            /* Sign In Form: Username + Password */
+            /* Sign In Form: Email + Password */
             <form onSubmit={handleSignIn} className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Username</label>
+                <label className="text-xs font-medium text-muted-foreground">Email</label>
                 <div className="relative flex items-center">
-                  <User className="absolute left-3 h-3.5 w-3.5 text-muted-foreground/60" />
+                  <Mail className="absolute left-3 h-3.5 w-3.5 text-muted-foreground/60" />
                   <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter your username"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="developer@example.com"
                     autoFocus
                     required
                     className="w-full h-8.5 pl-9 pr-3 rounded-lg bg-surface-input text-foreground text-xs placeholder:text-muted-foreground/40 outline-none focus:bg-surface-editor card-shadow transition-colors"
@@ -258,17 +246,31 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
               </div>
             </form>
           ) : (
-            /* Sign Up Form: Username + Password */
+            /* Sign Up Form: Name + Email + Password */
             <form onSubmit={handleSignUp} className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Username</label>
+                <label className="text-xs font-medium text-muted-foreground">Full Name (Optional)</label>
                 <div className="relative flex items-center">
                   <User className="absolute left-3 h-3.5 w-3.5 text-muted-foreground/60" />
                   <input
                     type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Choose a username"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Virendra Phirke"
+                    className="w-full h-8.5 pl-9 pr-3 rounded-lg bg-surface-input text-foreground text-xs placeholder:text-muted-foreground/40 outline-none focus:bg-surface-editor card-shadow transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Email Address</label>
+                <div className="relative flex items-center">
+                  <Mail className="absolute left-3 h-3.5 w-3.5 text-muted-foreground/60" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="developer@example.com"
                     autoFocus
                     required
                     className="w-full h-8.5 pl-9 pr-3 rounded-lg bg-surface-input text-foreground text-xs placeholder:text-muted-foreground/40 outline-none focus:bg-surface-editor card-shadow transition-colors"
