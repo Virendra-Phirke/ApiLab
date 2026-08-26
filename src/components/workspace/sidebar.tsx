@@ -3,13 +3,16 @@
 import React from 'react';
 import { CollectionTree } from './collections/collection-tree';
 import { HistoryList } from './history/history-list';
+import { ScheduledAnalytics } from './scheduler/scheduled-analytics';
 import { useWorkspaceStore } from '@/store/workspace-store';
+import { useSchedulerStore } from '@/store/scheduler-store';
 import { useRequest } from '@/hooks/use-request';
 import {
   Folder,
   History,
   Zap,
   Plus,
+  Timer,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,6 +30,7 @@ export function WorkspaceSidebar({
   onOpenEnvironments,
 }: SidebarProps) {
   const { sidebarView, setSidebarView, collections, history } = useWorkspaceStore();
+  const { status: schedulerStatus, logs } = useSchedulerStore();
   const { createNew } = useRequest();
 
   return (
@@ -62,53 +66,81 @@ export function WorkspaceSidebar({
         </button>
       </div>
 
-      {/* 3. Segmented Navigation View Switcher (Collections / History) */}
+      {/* 3. Segmented Navigation View Switcher (Collections / History / Schedules) */}
       <div className="px-2.5 py-1.5">
         <div className="flex items-center p-0.5 rounded-lg bg-surface-input gap-0.5">
+          {/* Collections Tab */}
           <button
             type="button"
             onClick={() => setSidebarView('collections')}
-            className={`flex-1 h-6 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 h-6.5 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               sidebarView === 'collections'
                 ? 'bg-surface-panel text-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
+            title="Collections"
           >
             <Folder className="h-3 w-3" />
-            <span>Collections</span>
+            <span className="hidden sm:inline">Collections</span>
             {collections.length > 0 && (
-              <span className="text-[10px] font-mono opacity-80">
+              <span className="text-[10px] font-mono opacity-70">
                 {collections.length}
               </span>
             )}
           </button>
 
+          {/* History Tab */}
           <button
             type="button"
             onClick={() => setSidebarView('history')}
-            className={`flex-1 h-6 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`flex-1 h-6.5 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               sidebarView === 'history'
                 ? 'bg-surface-panel text-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
+            title="History"
           >
             <History className="h-3 w-3" />
-            <span>History</span>
+            <span className="hidden sm:inline">History</span>
             {history.length > 0 && (
-              <span className="text-[10px] font-mono opacity-80">
+              <span className="text-[10px] font-mono opacity-70">
                 {history.length}
               </span>
             )}
           </button>
+
+          {/* Schedules & Analytics Tab */}
+          <button
+            type="button"
+            onClick={() => setSidebarView('schedules')}
+            className={`flex-1 h-6.5 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer relative ${
+              sidebarView === 'schedules'
+                ? 'bg-surface-panel text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title="Schedules & Auto-Runner Telemetry"
+          >
+            <Timer className="h-3 w-3 text-primary" />
+            <span className="hidden sm:inline">Schedules</span>
+            {schedulerStatus === 'running' ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+            ) : logs.length > 0 ? (
+              <span className="text-[10px] font-mono opacity-70">
+                {logs.length}
+              </span>
+            ) : null}
+          </button>
         </div>
       </div>
 
-      {/* 4. Scrollable List Area (Collections / History) */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-1 py-1">
+      {/* 4. Scrollable List Area (Collections / History / Schedules) */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-2 py-1">
         {sidebarView === 'collections' ? (
           <CollectionTree />
-        ) : (
+        ) : sidebarView === 'history' ? (
           <HistoryList />
+        ) : (
+          <ScheduledAnalytics />
         )}
       </div>
 

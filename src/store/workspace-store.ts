@@ -6,8 +6,8 @@ import type { Environment } from '@/types/environment';
 import type { HistoryEntry, TestRunResult } from '@/types/test';
 import { createDefaultRequest } from '@/types/request';
 
-export type SidebarView = 'collections' | 'history';
-export type SidebarTab = 'collections' | 'history';
+export type SidebarView = 'collections' | 'history' | 'schedules';
+export type SidebarTab = 'collections' | 'history' | 'schedules';
 
 interface WorkspaceState {
   // Active request
