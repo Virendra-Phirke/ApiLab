@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, jsonb, integer } from 'drizzle-orm/pg-core';
 import { ScheduleJobConfig, ScheduleStats } from '@/types/scheduler';
 
 export const user = pgTable('user', {
@@ -64,7 +64,31 @@ export const schedules = pgTable('schedules', {
   auth: jsonb('auth').$type<any>(),
   config: jsonb('config').$type<ScheduleJobConfig>().notNull(),
   stats: jsonb('stats').$type<ScheduleStats>(),
-  status: text('status').notNull().default('idle'),
+  status: text('status').notNull().default('idle'), // 'idle' | 'running' | 'paused' | 'completed'
+  currentRunIndex: integer('currentRunIndex').default(0),
+  lastRunAt: timestamp('lastRunAt'),
+  nextRunAt: timestamp('nextRunAt'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+
+export const scheduleLogs = pgTable('schedule_logs', {
+  id: text('id').primaryKey(),
+  scheduleId: text('scheduleId')
+    .notNull()
+    .references(() => schedules.id, { onDelete: 'cascade' }),
+  userId: text('userId').references(() => user.id, { onDelete: 'cascade' }),
+  runIndex: integer('runIndex').notNull().default(1),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  method: text('method').notNull().default('GET'),
+  url: text('url').notNull(),
+  status: integer('status').notNull(),
+  statusText: text('statusText').notNull().default('OK'),
+  duration: integer('duration').notNull().default(0),
+  responseSize: integer('responseSize').notNull().default(0),
+  responseBody: text('responseBody').default(''),
+  isError: boolean('isError').notNull().default(false),
+  retryAttempt: integer('retryAttempt').default(0),
+  executedBy: text('executedBy').notNull().default('cloud-cron'), // 'cloud-cron' | 'client-browser'
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
 });

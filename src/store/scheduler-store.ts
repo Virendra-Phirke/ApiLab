@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 interface SchedulerStore {
   isOpen: boolean;
   isLoading: boolean;
+  isDispatching: boolean;
   activeTab: 'config' | 'runner';
   jobs: ScheduleJob[];
   selectedJobId: string | null;
@@ -29,6 +30,8 @@ interface SchedulerStore {
 
   // Actions
   fetchSchedulesFromDb: () => Promise<void>;
+  fetchJobLogsFromDb: (id: string) => Promise<void>;
+  triggerCloudDispatch: () => Promise<void>;
   setIsOpen: (isOpen: boolean) => void;
   setActiveTab: (tab: 'config' | 'runner') => void;
   selectJob: (id: string) => void;
@@ -107,7 +110,7 @@ const createEmptyStats = (): ScheduleStats => ({
   maxDurationMs: 0,
 });
 
-// Demo fallback job if db is empty
+// Initial Demo Job
 const initialJobs: ScheduleJob[] = [
   {
     id: 'demo-job-1',
@@ -154,6 +157,7 @@ const initialJobs: ScheduleJob[] = [
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   isOpen: false,
   isLoading: false,
+  isDispatching: false,
   activeTab: 'config',
   jobs: initialJobs,
   selectedJobId: 'demo-job-1',
@@ -190,19 +194,26 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
           },
           environmentVariables: [],
           config: row.config || defaultInitialConfig,
-          status: 'idle',
+          status: row.status || 'idle',
           countdownSeconds: row.config?.intervalSeconds || 300,
-          currentRunIndex: 0,
+          currentRunIndex: row.currentRunIndex || 0,
           stats: row.stats || createEmptyStats(),
           logs: [],
           createdAt: new Date(row.createdAt).getTime(),
           updatedAt: new Date(row.updatedAt).getTime(),
         }));
 
+        const activeId = get().selectedJobId && mappedJobs.some((j) => j.id === get().selectedJobId)
+          ? get().selectedJobId!
+          : mappedJobs[0].id;
+
         set({
           jobs: mappedJobs,
-          selectedJobId: mappedJobs[0].id,
+          selectedJobId: activeId,
         });
+
+        // Fetch logs for active job
+        get().fetchJobLogsFromDb(activeId);
       }
     } catch (err) {
       console.warn('Failed to fetch schedules from DB:', err);
@@ -211,10 +222,64 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     }
   },
 
+  fetchJobLogsFromDb: async (id: string) => {
+    try {
+      const res = await fetch(`/api/schedules/${id}/logs`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.logs)) {
+        const mappedLogs: ScheduleRunLog[] = data.logs.map((row: any) => ({
+          id: row.id,
+          runIndex: row.runIndex,
+          timestamp: new Date(row.timestamp).getTime(),
+          method: row.method,
+          url: row.url,
+          status: row.status,
+          statusText: row.statusText,
+          duration: row.duration,
+          responseSize: row.responseSize,
+          responseBody: row.responseBody || '',
+          isError: row.isError,
+          retryAttempt: row.retryAttempt || 0,
+        }));
+
+        set((state) => ({
+          jobs: state.jobs.map((j) => (j.id === id ? { ...j, logs: mappedLogs } : j)),
+        }));
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch logs for schedule ${id}:`, err);
+    }
+  },
+
+  triggerCloudDispatch: async () => {
+    try {
+      set({ isDispatching: true });
+      const res = await fetch('/api/cron/dispatch');
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Cloud Cron Triggered: ${data.processedCount} jobs executed`);
+        await get().fetchSchedulesFromDb();
+        if (get().selectedJobId) {
+          await get().fetchJobLogsFromDb(get().selectedJobId!);
+        }
+      } else {
+        toast.info(data.message || 'No jobs due for execution');
+      }
+    } catch (err: any) {
+      toast.error('Failed to trigger cloud cron runner');
+    } finally {
+      set({ isDispatching: false });
+    }
+  },
+
   setIsOpen: (isOpen) => set({ isOpen }),
   setActiveTab: (activeTab) => set({ activeTab }),
 
-  selectJob: (id) => set({ selectedJobId: id }),
+  selectJob: (id) => {
+    set({ selectedJobId: id });
+    get().fetchJobLogsFromDb(id);
+  },
 
   setFormName: (name) => set({ formName: name }),
 
@@ -431,7 +496,12 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     });
     set({ jobs: updated });
 
-    // Update stats in DB
+    // Clear logs from DB
+    fetch(`/api/schedules/${id}/logs`, {
+      method: 'DELETE',
+    }).catch((err) => console.error('DB clear logs error:', err));
+
+    // Reset stats in DB
     fetch(`/api/schedules/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -512,7 +582,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       fetch(`/api/schedules/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stats: updatedStats }),
+        body: JSON.stringify({ stats: updatedStats, currentRunIndex: nextIndex }),
       }).catch((err) => console.error('DB update stats error:', err));
 
       if (isError) {
@@ -639,10 +709,12 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     if (jobTimeouts.has(id)) clearTimeout(jobTimeouts.get(id));
     if (jobRetryTimeouts.has(id)) clearTimeout(jobRetryTimeouts.get(id));
 
-    // Update job status
+    // Update job status in local state
     set((state) => ({
       jobs: state.jobs.map((j) => (j.id === id ? { ...j, status: 'running' } : j)),
     }));
+
+    let nextRunAtDate: Date = new Date();
 
     if (job.config.type === 'once') {
       const delayMs = job.config.targetTimestamp
@@ -650,6 +722,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         : (job.config.delaySeconds || 10) * 1000;
 
       const targetTime = Date.now() + delayMs;
+      nextRunAtDate = new Date(targetTime);
       jobNextTriggers.set(id, targetTime);
 
       const updateCountdown = () => {
@@ -668,11 +741,12 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       }, delayMs);
       jobTimeouts.set(id, timeout);
 
-      toast.info(`"${job.name}" scheduled to run in ${Math.ceil(delayMs / 1000)}s`);
+      toast.info(`"${job.name}" 24/7 cloud runner scheduled in ${Math.ceil(delayMs / 1000)}s`);
     } else if (job.config.type === 'daily') {
       const timeStr = job.config.dailyTime || '09:00';
       const delayMs = getMsUntilDailyTime(timeStr);
       const targetTime = Date.now() + delayMs;
+      nextRunAtDate = new Date(targetTime);
       jobNextTriggers.set(id, targetTime);
 
       const interval = setInterval(() => {
@@ -699,12 +773,13 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       }, delayMs);
       jobTimeouts.set(id, timeout);
 
-      toast.info(`"${job.name}" daily schedule active (@ ${timeStr})`);
+      toast.info(`"${job.name}" 24/7 cloud daily schedule active (@ ${timeStr})`);
     } else {
       // Interval Runner (1 min to 15 hours)
       const intervalSec = convertToSeconds(job.config.intervalValue, job.config.intervalUnit);
       const intervalMs = intervalSec * 1000;
       let nextTrigger = Date.now() + intervalMs;
+      nextRunAtDate = new Date(nextTrigger);
       jobNextTriggers.set(id, nextTrigger);
 
       set((state) => ({
@@ -733,15 +808,33 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       }, 500);
 
       jobIntervals.set(id, interval);
-      toast.info(`"${job.name}" started (Every ${job.config.intervalValue} ${job.config.intervalUnit})`);
+      toast.info(`"${job.name}" 24/7 cloud runner started (Every ${job.config.intervalValue} ${job.config.intervalUnit})`);
     }
+
+    // Persist running status and nextRunAt to Neon PostgreSQL so Cloud Cron continues 24/7!
+    fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'running',
+        nextRunAt: nextRunAtDate,
+      }),
+    }).catch((err) => console.error('Failed to sync running status to DB:', err));
   },
 
   pauseJob: (id: string) => {
     set((state) => ({
       jobs: state.jobs.map((j) => (j.id === id ? { ...j, status: 'paused' } : j)),
     }));
-    toast.info('Schedule paused');
+
+    // Update in DB
+    fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'paused' }),
+    }).catch((err) => console.error('Failed to sync pause status to DB:', err));
+
+    toast.info('Schedule paused in cloud');
   },
 
   resumeJob: (id: string) => {
@@ -750,14 +843,23 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
 
     const intervalSec = convertToSeconds(job.config.intervalValue, job.config.intervalUnit);
     const intervalMs = intervalSec * 1000;
-    jobNextTriggers.set(id, Date.now() + intervalMs);
+    const nextTrigger = Date.now() + intervalMs;
+    jobNextTriggers.set(id, nextTrigger);
 
     set((state) => ({
       jobs: state.jobs.map((j) =>
         j.id === id ? { ...j, status: 'running', countdownSeconds: intervalSec } : j
       ),
     }));
-    toast.info('Schedule resumed');
+
+    // Update in DB
+    fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'running', nextRunAt: new Date(nextTrigger) }),
+    }).catch((err) => console.error('Failed to sync resume status to DB:', err));
+
+    toast.info('Schedule resumed in cloud');
   },
 
   stopJob: (id: string, reason?: string) => {
@@ -779,6 +881,13 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         j.id === id ? { ...j, status: 'completed', countdownSeconds: 0 } : j
       ),
     }));
+
+    // Update in DB
+    fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed', nextRunAt: null }),
+    }).catch((err) => console.error('Failed to sync stop status to DB:', err));
 
     if (reason) {
       toast.info(reason);

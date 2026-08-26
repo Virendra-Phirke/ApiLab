@@ -29,6 +29,8 @@ import {
   Trash2,
   Sun,
   Globe,
+  Cloud,
+  CloudLightning,
 } from 'lucide-react';
 import { formatBytes } from '@/lib/formatters';
 import { toast } from 'sonner';
@@ -49,6 +51,8 @@ export function ScheduleDashboard() {
     clearJobLogs,
     retryJobFailedRun,
     executeJobRun,
+    triggerCloudDispatch,
+    isDispatching,
   } = useSchedulerStore();
 
   const { setMainView, updateActiveRequest, activeRequest, environments, activeEnvironmentId } = useWorkspaceStore();
@@ -168,6 +172,17 @@ export function ScheduleDashboard() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={triggerCloudDispatch}
+            disabled={isDispatching}
+            className="h-7.5 px-3 rounded-lg bg-surface-input hover:bg-surface-panel text-muted-foreground hover:text-foreground text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-border/30 disabled:opacity-50"
+            title="Trigger 24/7 Serverless Cloud Cron Dispatcher now"
+          >
+            <CloudLightning className={`h-3.5 w-3.5 text-amber-400 ${isDispatching ? 'animate-spin' : ''}`} />
+            <span>{isDispatching ? 'Executing Cloud...' : 'Trigger Cloud Cron'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleCreateNew}
             className="h-7.5 px-3.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
@@ -245,7 +260,7 @@ export function ScheduleDashboard() {
                 </div>
 
                 {/* Right: Frequency & Live Countdown */}
-                <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono shrink-0">
+                <div className="flex items-center gap-2.5 text-xs text-muted-foreground font-mono shrink-0">
                   <div className="flex items-center gap-1.5 text-foreground bg-surface-input px-3 py-1.5 rounded-lg border border-border/20">
                     {selectedJob.config.type === 'daily' ? (
                       <Sun className="h-4 w-4 text-amber-400" />
@@ -259,6 +274,15 @@ export function ScheduleDashboard() {
                         ? `Every ${selectedJob.config.intervalValue} ${selectedJob.config.intervalUnit}`
                         : 'One-time run'}
                     </span>
+                  </div>
+
+                  {/* 24/7 Cloud Badge */}
+                  <div
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/25 font-sans text-xs font-semibold"
+                    title="This schedule is persisted in Neon PostgreSQL and executes 24/7 in the cloud even when your PC is turned off."
+                  >
+                    <Cloud className="h-3.5 w-3.5 text-blue-400" />
+                    <span>24/7 Cloud Active</span>
                   </div>
 
                   {isRunning && (
