@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Send, Loader2, Copy, Check, X, CornerDownLeft } from 'lucide-react';
+import { Send, Loader2, Copy, Check, X, CornerDownLeft, Timer, Activity } from 'lucide-react';
 import { MethodSelector } from './method-selector';
 import { HttpMethod } from '@/types/request';
 import { generateCurl } from '@/lib/curl';
 import { useWorkspaceStore } from '@/store/workspace-store';
+import { useSchedulerStore } from '@/store/scheduler-store';
+import { SchedulerModal } from '../scheduler/scheduler-modal';
 import { toast } from 'sonner';
 
 interface UrlBarProps {
@@ -28,7 +30,8 @@ export function UrlBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [sendFeedback, setSendFeedback] = useState<'idle' | 'success' | 'error'>('idle');
-  const { activeRequest, response } = useWorkspaceStore();
+  const { activeRequest, response, environments, activeEnvironmentId } = useWorkspaceStore();
+  const { setIsOpen: setSchedulerOpen, setTargetRequest, status: schedulerStatus, countdownSeconds } = useSchedulerStore();
 
   // Watch response to show temporary success/error feedback on Send button
   useEffect(() => {
@@ -68,6 +71,12 @@ export function UrlBar({
     } catch {
       toast.error('Failed to generate cURL');
     }
+  };
+
+  const handleOpenScheduler = () => {
+    const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
+    setTargetRequest(activeRequest, activeEnv?.variables || []);
+    setSchedulerOpen(true);
   };
 
   return (
@@ -110,6 +119,30 @@ export function UrlBar({
           </div>
         </div>
 
+        {/* Active Schedule Runner Pulsing Badge */}
+        {schedulerStatus === 'running' && (
+          <button
+            type="button"
+            onClick={handleOpenScheduler}
+            className="h-9 px-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer animate-pulse hover:bg-emerald-500/25 transition-all shrink-0"
+            title="Auto-runner is currently active. Click to view live monitor."
+          >
+            <Activity className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Next in {countdownSeconds}s</span>
+          </button>
+        )}
+
+        {/* Schedule / Auto-Runner Config Trigger */}
+        <button
+          type="button"
+          onClick={handleOpenScheduler}
+          className="h-9 px-2.5 rounded-lg bg-surface-card hover:bg-surface-card-hover border border-border/30 text-muted-foreground hover:text-foreground text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+          title="Schedule request or setup interval runner"
+        >
+          <Timer className="h-3.5 w-3.5 text-primary" />
+          <span className="hidden md:inline">Schedule</span>
+        </button>
+
         {/* Send Button with Theme-Adaptive High-Contrast Solid Colors */}
         <button
           type="button"
@@ -148,6 +181,9 @@ export function UrlBar({
           )}
         </button>
       </div>
+
+      {/* Scheduler Modal */}
+      <SchedulerModal />
     </div>
   );
 }
