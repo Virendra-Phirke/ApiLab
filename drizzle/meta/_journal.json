@@ -15,6 +15,13 @@
       "when": 1787745216469,
       "tag": "0001_daily_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787745550090,
+      "tag": "0002_silky_rogue",
+      "breakpoints": true
     }
   ]
 }

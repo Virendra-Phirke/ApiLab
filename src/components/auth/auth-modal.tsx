@@ -52,10 +52,19 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
     setError(null);
 
     try {
-      const res = await (signIn as any).username({
+      // First attempt: username signin
+      let res = await (signIn as any).username({
         username: cleanUser,
         password,
       });
+
+      // Fallback: email signin with internal domain alias
+      if (res?.error) {
+        res = await signIn.email({
+          email: `${cleanUser.toLowerCase()}@apilab.local`,
+          password,
+        });
+      }
 
       if (res?.error) {
         setError(res.error.message || 'Invalid username or password.');
@@ -94,23 +103,12 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
     setError(null);
 
     try {
-      // Better Auth username signup
-      let res;
-      if (typeof (signUp as any).username === 'function') {
-        res = await (signUp as any).username({
-          username: cleanUser,
-          password,
-          name: cleanUser,
-        });
-      } else {
-        // Fallback for Better Auth core with username
-        res = await signUp.email({
-          email: `${cleanUser.toLowerCase()}@apilab.local`,
-          password,
-          name: cleanUser,
-          username: cleanUser,
-        } as any);
-      }
+      const res = await signUp.email({
+        email: `${cleanUser.toLowerCase()}@apilab.local`,
+        password,
+        name: cleanUser,
+        username: cleanUser,
+      } as any);
 
       if (res?.error) {
         setError(res.error.message || 'Sign up failed. Username may already be taken.');
