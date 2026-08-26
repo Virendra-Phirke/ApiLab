@@ -29,7 +29,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-popover/95 backdrop-blur-xl border-border">
+      <DialogContent className="sm:max-w-md bg-surface-panel border-border/40 card-shadow">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Download className="h-4 w-4 text-primary" />

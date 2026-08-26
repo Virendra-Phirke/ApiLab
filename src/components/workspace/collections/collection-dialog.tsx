@@ -41,7 +41,7 @@ export function CollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-popover/95 backdrop-blur-xl border-border">
+      <DialogContent className="sm:max-w-md bg-surface-panel border-border/40 card-shadow">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{collection ? 'Rename Collection' : 'Create New Collection'}</DialogTitle>

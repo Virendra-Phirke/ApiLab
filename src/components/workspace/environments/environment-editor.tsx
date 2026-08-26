@@ -63,7 +63,7 @@ export function EnvironmentEditor({ open, onOpenChange }: EnvironmentEditorProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl bg-popover/95 backdrop-blur-xl border-border max-h-[85vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-2xl bg-surface-panel border-border/40 max-h-[85vh] flex flex-col p-0 overflow-hidden card-shadow">
         <DialogHeader className="p-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Layers className="h-4 w-4 text-primary" />
