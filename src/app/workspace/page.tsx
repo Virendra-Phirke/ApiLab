@@ -11,6 +11,7 @@ import { ExportDialog } from '@/components/workspace/import-export/export-dialog
 import { SettingsDialog } from '@/components/workspace/settings/settings-dialog';
 import { CommandPalette } from '@/components/workspace/command-palette/command-palette';
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler';
+import { UserMenu } from '@/components/auth/user-menu';
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -143,7 +144,7 @@ export default function WorkspacePage() {
           </div>
         </button>
 
-        {/* Right: Environment Selector, Theme & Settings */}
+        {/* Right: Environment Selector, Theme, Settings & Auth UserMenu */}
         <div className="flex items-center gap-2">
           <EnvironmentSelector />
           <AnimatedThemeToggler />
@@ -155,6 +156,7 @@ export default function WorkspacePage() {
           >
             <Settings className="h-3.5 w-3.5" />
           </button>
+          <UserMenu />
         </div>
       </header>
 
