@@ -7,7 +7,6 @@ import { HttpMethod } from '@/types/request';
 import { generateCurl } from '@/lib/curl';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { useSchedulerStore } from '@/store/scheduler-store';
-import { SchedulerModal } from '../scheduler/scheduler-modal';
 import { toast } from 'sonner';
 
 interface UrlBarProps {
@@ -182,9 +181,6 @@ export function UrlBar({
           )}
         </button>
       </div>
-
-      {/* Scheduler Modal */}
-      <SchedulerModal />
     </div>
   );
 }

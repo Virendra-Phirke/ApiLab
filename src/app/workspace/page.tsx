@@ -13,6 +13,7 @@ import { CommandPalette } from '@/components/workspace/command-palette/command-p
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler';
 import { UserMenu } from '@/components/auth/user-menu';
 import { ScheduleDashboard } from '@/components/workspace/scheduler/schedule-dashboard';
+import { SchedulerModal } from '@/components/workspace/scheduler/scheduler-modal';
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -237,6 +238,7 @@ export default function WorkspacePage() {
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
       <EnvironmentEditor open={environmentsOpen} onOpenChange={setEnvironmentsOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SchedulerModal />
     </div>
   );
 }
