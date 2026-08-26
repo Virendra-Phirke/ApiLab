@@ -9,6 +9,7 @@ import {
   Pause,
   Plus,
   ArrowUpRight,
+  ArrowLeft,
   Sun,
   Calendar,
   Layers,
@@ -89,11 +90,11 @@ export function ScheduledAnalytics() {
 
           <button
             type="button"
-            onClick={() => setMainView('schedules')}
+            onClick={() => setMainView('request')}
             className="h-6 px-2 rounded-md bg-surface-input hover:bg-surface-panel text-muted-foreground hover:text-foreground text-[10px] font-medium flex items-center gap-1 border border-border/30 cursor-pointer transition-colors"
-            title="Open Automation Studio on the right"
+            title="Open Request Builder on the right"
           >
-            <ArrowUpRight className="h-3 w-3" />
+            <ArrowLeft className="h-3 w-3 text-primary" />
             <span>Studio</span>
           </button>
         </div>
@@ -224,14 +225,15 @@ export function ScheduledAnalytics() {
       <div className="pt-1">
         <button
           type="button"
-          onClick={() => setMainView('schedules')}
+          onClick={() => setMainView('request')}
           className="w-full h-8 px-2.5 rounded-lg bg-surface-card hover:bg-surface-card-hover border border-border/30 text-foreground text-xs font-semibold flex items-center justify-between transition-colors card-shadow cursor-pointer"
+          title="Open API Request Studio / Builder on the right"
         >
           <div className="flex items-center gap-1.5 text-primary">
-            <Activity className="h-3.5 w-3.5" />
-            <span>Open Studio on Right</span>
+            <Zap className="h-3.5 w-3.5" />
+            <span>Open Request Studio</span>
           </div>
-          <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </div>
     </div>
