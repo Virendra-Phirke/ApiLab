@@ -77,9 +77,7 @@ export function UserMenu() {
               <span>{displayName}</span>
               <ShieldCheck className="h-3 w-3 text-primary" />
             </div>
-            {user.email && (
-              <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
-            )}
+            <p className="text-[10px] text-muted-foreground font-mono">@{displayName.toLowerCase().replace(/\s+/g, '')}</p>
           </div>
         </DropdownMenuLabel>
         
