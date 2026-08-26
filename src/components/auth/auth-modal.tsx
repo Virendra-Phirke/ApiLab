@@ -16,9 +16,19 @@ interface AuthModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultMode?: 'signin' | 'signup';
+  title?: string;
+  description?: string;
+  onSuccess?: () => void;
 }
 
-export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthModalProps) {
+export function AuthModal({
+  open,
+  onOpenChange,
+  defaultMode = 'signin',
+  title,
+  description,
+  onSuccess,
+}: AuthModalProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>(defaultMode);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -65,7 +75,11 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
       } else {
         toast.success(`Welcome back!`);
         handleOpenChange(false);
-        setTimeout(() => window.location.reload(), 300);
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          setTimeout(() => window.location.reload(), 300);
+        }
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication service error. Please try again.');
@@ -105,7 +119,11 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
       } else {
         toast.success(`Account created! Welcome to ApiLab, ${displayName}.`);
         handleOpenChange(false);
-        setTimeout(() => window.location.reload(), 300);
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          setTimeout(() => window.location.reload(), 300);
+        }
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to create account.');
@@ -126,12 +144,13 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
             </div>
             <div>
               <DialogTitle className="text-sm font-bold text-foreground">
-                {mode === 'signin' ? 'Sign in to ApiLab' : 'Create ApiLab Account'}
+                {title || (mode === 'signin' ? 'Sign in to ApiLab' : 'Create ApiLab Account')}
               </DialogTitle>
               <DialogDescription className="text-[11px] text-muted-foreground mt-0.5">
-                {mode === 'signin'
-                  ? 'Access your cloud workspace and saved requests.'
-                  : 'Sync your API environments and requests across devices.'}
+                {description ||
+                  (mode === 'signin'
+                    ? 'Access your cloud workspace and saved requests.'
+                    : 'Sync your API environments and requests across devices.')}
               </DialogDescription>
             </div>
           </div>
