@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { ScheduleJobConfig, ScheduleStats } from '@/types/scheduler';
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -49,4 +50,21 @@ export const verification = pgTable('verification', {
   expiresAt: timestamp('expiresAt').notNull(),
   createdAt: timestamp('createdAt').defaultNow(),
   updatedAt: timestamp('updatedAt').defaultNow(),
+});
+
+export const schedules = pgTable('schedules', {
+  id: text('id').primaryKey(),
+  userId: text('userId').references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  method: text('method').notNull().default('GET'),
+  url: text('url').notNull(),
+  headers: jsonb('headers').$type<any[]>().default([]),
+  queryParams: jsonb('queryParams').$type<any[]>().default([]),
+  body: jsonb('body').$type<any>(),
+  auth: jsonb('auth').$type<any>(),
+  config: jsonb('config').$type<ScheduleJobConfig>().notNull(),
+  stats: jsonb('stats').$type<ScheduleStats>(),
+  status: text('status').notNull().default('idle'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });

@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useWorkspaceStore } from '@/store/workspace-store';
+import { useSchedulerStore } from '@/store/scheduler-store';
 import { db, clearWorkspace, exportWorkspace, importWorkspace } from '@/lib/db';
 import { importSchema } from '@/lib/validation';
 import { toast } from 'sonner';
@@ -28,6 +29,9 @@ export function useWorkspace() {
       setRequests(reqs);
       setEnvironments(envs);
       setHistory(hist);
+
+      // Load DB schedules
+      useSchedulerStore.getState().fetchSchedulesFromDb();
     } catch (err) {
       console.error('Failed to load workspace data from IndexedDB:', err);
     } finally {

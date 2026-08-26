@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 
 interface SchedulerStore {
   isOpen: boolean;
+  isLoading: boolean;
   activeTab: 'config' | 'runner';
   jobs: ScheduleJob[];
   selectedJobId: string | null;
@@ -27,6 +28,7 @@ interface SchedulerStore {
   targetEnvVariables: EnvironmentVariable[];
 
   // Actions
+  fetchSchedulesFromDb: () => Promise<void>;
   setIsOpen: (isOpen: boolean) => void;
   setActiveTab: (tab: 'config' | 'runner') => void;
   selectJob: (id: string) => void;
@@ -105,7 +107,7 @@ const createEmptyStats = (): ScheduleStats => ({
   maxDurationMs: 0,
 });
 
-// Seed an initial demo job if needed
+// Demo fallback job if db is empty
 const initialJobs: ScheduleJob[] = [
   {
     id: 'demo-job-1',
@@ -151,6 +153,7 @@ const initialJobs: ScheduleJob[] = [
 
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   isOpen: false,
+  isLoading: false,
   activeTab: 'config',
   jobs: initialJobs,
   selectedJobId: 'demo-job-1',
@@ -160,6 +163,53 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   formConfig: defaultInitialConfig,
   targetRequest: null,
   targetEnvVariables: [],
+
+  fetchSchedulesFromDb: async () => {
+    try {
+      set({ isLoading: true });
+      const res = await fetch('/api/schedules');
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.schedules) && data.schedules.length > 0) {
+        const mappedJobs: ScheduleJob[] = data.schedules.map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          request: {
+            id: row.id,
+            name: row.name,
+            method: row.method || 'GET',
+            url: row.url || '',
+            headers: row.headers || [],
+            queryParams: row.queryParams || [],
+            body: row.body || { type: 'none', content: '' },
+            auth: row.auth || { type: 'none' },
+            tests: [],
+            createdAt: new Date(row.createdAt).getTime(),
+            updatedAt: new Date(row.updatedAt).getTime(),
+          },
+          environmentVariables: [],
+          config: row.config || defaultInitialConfig,
+          status: 'idle',
+          countdownSeconds: row.config?.intervalSeconds || 300,
+          currentRunIndex: 0,
+          stats: row.stats || createEmptyStats(),
+          logs: [],
+          createdAt: new Date(row.createdAt).getTime(),
+          updatedAt: new Date(row.updatedAt).getTime(),
+        }));
+
+        set({
+          jobs: mappedJobs,
+          selectedJobId: mappedJobs[0].id,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch schedules from DB:', err);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
   setIsOpen: (isOpen) => set({ isOpen }),
   setActiveTab: (activeTab) => set({ activeTab }),
@@ -195,7 +245,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       editingJobId: null,
       formName: generatedName,
       formConfig: defaultInitialConfig,
-      targetRequest: request,
+      targetRequest: { ...request },
       targetEnvVariables: envVars,
       activeTab: 'config',
       isOpen: true,
@@ -210,7 +260,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       editingJobId: id,
       formName: job.name,
       formConfig: job.config,
-      targetRequest: job.request,
+      targetRequest: { ...job.request },
       targetEnvVariables: job.environmentVariables,
       activeTab: 'config',
       isOpen: true,
@@ -225,7 +275,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     }
 
     if (editingJobId) {
-      // Update existing job
+      // Update existing job in State
       const updatedJobs = jobs.map((j) => {
         if (j.id === editingJobId) {
           return {
@@ -241,10 +291,27 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       });
 
       set({ jobs: updatedJobs, isOpen: false });
+
+      // Persist Update to DB
+      fetch(`/api/schedules/${editingJobId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formName.trim() || targetRequest.name,
+          method: targetRequest.method,
+          url: targetRequest.url,
+          headers: targetRequest.headers,
+          queryParams: targetRequest.queryParams,
+          body: targetRequest.body,
+          auth: targetRequest.auth,
+          config: formConfig,
+        }),
+      }).catch((err) => console.error('DB Update error:', err));
+
       toast.success(`Schedule "${formName}" updated`);
       return editingJobId;
     } else {
-      // Create new job
+      // Create new job in State
       const newId = uuidv4();
       const newJob: ScheduleJob = {
         id: newId,
@@ -267,7 +334,25 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         isOpen: false,
       });
 
-      toast.success(`Schedule "${newJob.name}" created!`);
+      // Persist Insert to DB
+      fetch('/api/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: newId,
+          name: newJob.name,
+          method: targetRequest.method,
+          url: targetRequest.url,
+          headers: targetRequest.headers,
+          queryParams: targetRequest.queryParams,
+          body: targetRequest.body,
+          auth: targetRequest.auth,
+          config: formConfig,
+          stats: createEmptyStats(),
+        }),
+      }).catch((err) => console.error('DB Insert error:', err));
+
+      toast.success(`Schedule "${newJob.name}" created and saved to DB!`);
       return newId;
     }
   },
@@ -279,16 +364,23 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       jobs: updated,
       selectedJobId: updated.length > 0 ? updated[0].id : null,
     });
-    toast.info('Schedule removed');
+
+    // Delete from DB
+    fetch(`/api/schedules/${id}`, {
+      method: 'DELETE',
+    }).catch((err) => console.error('DB Delete error:', err));
+
+    toast.info('Schedule removed from database');
   },
 
   duplicateJob: (id) => {
     const job = get().jobs.find((j) => j.id === id);
     if (!job) return;
 
+    const newId = uuidv4();
     const newJob: ScheduleJob = {
       ...job,
-      id: uuidv4(),
+      id: newId,
       name: `${job.name} (Copy)`,
       status: 'idle',
       countdownSeconds: job.config.intervalSeconds,
@@ -303,6 +395,25 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       jobs: [newJob, ...get().jobs],
       selectedJobId: newJob.id,
     });
+
+    // Save duplicate to DB
+    fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: newId,
+        name: newJob.name,
+        method: job.request.method,
+        url: job.request.url,
+        headers: job.request.headers,
+        queryParams: job.request.queryParams,
+        body: job.request.body,
+        auth: job.request.auth,
+        config: job.config,
+        stats: createEmptyStats(),
+      }),
+    }).catch((err) => console.error('DB Insert duplicate error:', err));
+
     toast.success(`Duplicated schedule as "${newJob.name}"`);
   },
 
@@ -319,12 +430,20 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       return j;
     });
     set({ jobs: updated });
+
+    // Update stats in DB
+    fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stats: createEmptyStats() }),
+    }).catch((err) => console.error('DB update stats error:', err));
+
     toast.info('Execution logs cleared');
   },
 
   executeJobRun: async (id: string, retryAttempt: number = 0): Promise<boolean> => {
     const job = get().jobs.find((j) => j.id === id);
-    if (!job || !job.request) return false;
+    if (!job || !job.request || !job.request.url) return false;
 
     const nextIndex = retryAttempt > 0 ? job.currentRunIndex : job.currentRunIndex + 1;
     const startTime = Date.now();
@@ -364,28 +483,37 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       const newRetry = job.stats.retryCount + (retryAttempt > 0 ? 1 : 0);
       const newTotalDuration = job.stats.totalDurationMs + duration;
 
+      const updatedStats: ScheduleStats = {
+        totalRuns: newTotal,
+        successCount: newSuccess,
+        errorCount: newError,
+        retryCount: newRetry,
+        totalDurationMs: newTotalDuration,
+        avgDurationMs: Math.round(newTotalDuration / newTotal),
+        minDurationMs: Math.min(job.stats.minDurationMs, duration),
+        maxDurationMs: Math.max(job.stats.maxDurationMs, duration),
+      };
+
       const updatedJobs = get().jobs.map((j) => {
         if (j.id === id) {
           return {
             ...j,
             currentRunIndex: nextIndex,
             logs: [logEntry, ...j.logs],
-            stats: {
-              totalRuns: newTotal,
-              successCount: newSuccess,
-              errorCount: newError,
-              retryCount: newRetry,
-              totalDurationMs: newTotalDuration,
-              avgDurationMs: Math.round(newTotalDuration / newTotal),
-              minDurationMs: Math.min(j.stats.minDurationMs, duration),
-              maxDurationMs: Math.max(j.stats.maxDurationMs, duration),
-            },
+            stats: updatedStats,
           };
         }
         return j;
       });
 
       set({ jobs: updatedJobs });
+
+      // Sync stats back to DB periodically
+      fetch(`/api/schedules/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stats: updatedStats }),
+      }).catch((err) => console.error('DB update stats error:', err));
 
       if (isError) {
         if (job.config.autoRetry && retryAttempt < job.config.maxRetries) {
