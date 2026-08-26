@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  ScheduleJob,
   ScheduleJobConfig,
   ScheduleRunLog,
   ScheduleStats,
@@ -15,36 +16,42 @@ import { toast } from 'sonner';
 interface SchedulerStore {
   isOpen: boolean;
   activeTab: 'config' | 'runner';
-  config: ScheduleJobConfig;
-  status: ScheduleStatus;
-  countdownSeconds: number;
-  currentRunIndex: number;
-  logs: ScheduleRunLog[];
-  stats: ScheduleStats;
+  jobs: ScheduleJob[];
+  selectedJobId: string | null;
+  editingJobId: string | null;
+
+  // Form State for modal
+  formName: string;
+  formConfig: ScheduleJobConfig;
   targetRequest: ApiRequest | null;
   targetEnvVariables: EnvironmentVariable[];
-  isRetrying: boolean;
-  lastFailedLog: ScheduleRunLog | null;
 
   // Actions
   setIsOpen: (isOpen: boolean) => void;
   setActiveTab: (tab: 'config' | 'runner') => void;
-  updateConfig: (partial: Partial<ScheduleJobConfig>) => void;
-  setTargetRequest: (request: ApiRequest, envVars: EnvironmentVariable[]) => void;
-  startJob: () => void;
-  pauseJob: () => void;
-  resumeJob: () => void;
-  stopJob: (reason?: string) => void;
-  clearLogs: () => void;
-  executeSingleRun: (retryAttempt?: number) => Promise<boolean>;
-  retryLastFailedRun: () => Promise<void>;
+  selectJob: (id: string) => void;
+  setFormName: (name: string) => void;
+  updateFormConfig: (partial: Partial<ScheduleJobConfig>) => void;
+  prepareNewJob: (request: ApiRequest, envVars: EnvironmentVariable[]) => void;
+  prepareEditJob: (id: string) => void;
+  saveJob: () => string;
+  deleteJob: (id: string) => void;
+  duplicateJob: (id: string) => void;
+
+  startJob: (id: string) => void;
+  pauseJob: (id: string) => void;
+  resumeJob: (id: string) => void;
+  stopJob: (id: string, reason?: string) => void;
+  clearJobLogs: (id: string) => void;
+  executeJobRun: (id: string, retryAttempt?: number) => Promise<boolean>;
+  retryJobFailedRun: (id: string) => Promise<void>;
 }
 
-// Timer references outside React component lifecycle
-let timerInterval: ReturnType<typeof setInterval> | null = null;
-let oneTimeTimeout: ReturnType<typeof setTimeout> | null = null;
-let retryTimeout: ReturnType<typeof setTimeout> | null = null;
-let nextTriggerTime: number = 0;
+// Timer maps keyed by Job ID
+const jobIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+const jobTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
+const jobRetryTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
+const jobNextTriggers: Map<string, number> = new Map();
 
 export function convertToSeconds(value: number, unit: TimeUnit): number {
   const v = Math.max(1, value);
@@ -66,14 +73,13 @@ export function getMsUntilDailyTime(timeStr: string = '09:00'): number {
   target.setHours(hours, minutes, 0, 0);
 
   if (target.getTime() <= now.getTime()) {
-    // Already passed today, schedule for tomorrow
     target.setDate(target.getDate() + 1);
   }
 
   return target.getTime() - now.getTime();
 }
 
-const initialConfig: ScheduleJobConfig = {
+const defaultInitialConfig: ScheduleJobConfig = {
   type: 'interval',
   delaySeconds: 10,
   intervalValue: 5,
@@ -87,7 +93,7 @@ const initialConfig: ScheduleJobConfig = {
   retryDelaySeconds: 5,
 };
 
-const initialStats: ScheduleStats = {
+const createEmptyStats = (): ScheduleStats => ({
   totalRuns: 0,
   successCount: 0,
   errorCount: 0,
@@ -96,57 +102,224 @@ const initialStats: ScheduleStats = {
   avgDurationMs: 0,
   minDurationMs: Infinity,
   maxDurationMs: 0,
-};
+});
+
+// Seed an initial demo job if needed
+const initialJobs: ScheduleJob[] = [
+  {
+    id: 'demo-job-1',
+    name: 'Weather API Ingestion',
+    request: {
+      id: 'req-weather',
+      name: 'OpenMeteo Weather Forecast',
+      method: 'GET',
+      url: 'https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true',
+      headers: [],
+      queryParams: [
+        { id: '1', key: 'latitude', value: '52.52', enabled: true },
+        { id: '2', key: 'longitude', value: '13.41', enabled: true },
+        { id: '3', key: 'current_weather', value: 'true', enabled: true },
+      ],
+      body: { type: 'none', content: '' },
+      auth: { type: 'none' },
+      tests: [],
+      createdAt: Date.now() - 3600000,
+      updatedAt: Date.now(),
+    },
+    environmentVariables: [],
+    config: {
+      type: 'interval',
+      intervalValue: 5,
+      intervalUnit: 'minutes',
+      intervalSeconds: 300,
+      maxRuns: 50,
+      stopOnError: false,
+      autoRetry: true,
+      maxRetries: 3,
+      retryDelaySeconds: 5,
+    },
+    status: 'idle',
+    countdownSeconds: 300,
+    currentRunIndex: 0,
+    stats: createEmptyStats(),
+    logs: [],
+    createdAt: Date.now() - 3600000,
+    updatedAt: Date.now(),
+  },
+];
 
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   isOpen: false,
   activeTab: 'config',
-  config: initialConfig,
-  status: 'idle',
-  countdownSeconds: 0,
-  currentRunIndex: 0,
-  logs: [],
-  stats: initialStats,
+  jobs: initialJobs,
+  selectedJobId: 'demo-job-1',
+  editingJobId: null,
+
+  formName: 'My Scheduled Request',
+  formConfig: defaultInitialConfig,
   targetRequest: null,
   targetEnvVariables: [],
-  isRetrying: false,
-  lastFailedLog: null,
 
   setIsOpen: (isOpen) => set({ isOpen }),
   setActiveTab: (activeTab) => set({ activeTab }),
-  updateConfig: (partial) =>
+
+  selectJob: (id) => set({ selectedJobId: id }),
+
+  setFormName: (name) => set({ formName: name }),
+
+  updateFormConfig: (partial) =>
     set((state) => {
-      const merged = { ...state.config, ...partial };
+      const merged = { ...state.formConfig, ...partial };
       if (partial.intervalValue !== undefined || partial.intervalUnit !== undefined) {
         merged.intervalSeconds = convertToSeconds(merged.intervalValue, merged.intervalUnit);
       }
-      return { config: merged };
+      return { formConfig: merged };
     }),
-  setTargetRequest: (request, envVars) =>
-    set({ targetRequest: request, targetEnvVariables: envVars }),
 
-  clearLogs: () =>
+  prepareNewJob: (request, envVars) => {
+    const generatedName = request.name || `${request.method} ${request.url ? new URL(request.url).pathname : 'Request'}`;
     set({
-      logs: [],
-      stats: initialStats,
-      currentRunIndex: 0,
-      lastFailedLog: null,
-    }),
+      editingJobId: null,
+      formName: generatedName,
+      formConfig: defaultInitialConfig,
+      targetRequest: request,
+      targetEnvVariables: envVars,
+      activeTab: 'config',
+      isOpen: true,
+    });
+  },
 
-  executeSingleRun: async (retryAttempt: number = 0): Promise<boolean> => {
-    const { targetRequest, targetEnvVariables, config, logs, stats, currentRunIndex } = get();
-    if (!targetRequest) return false;
+  prepareEditJob: (id) => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (!job) return;
 
-    const nextIndex = retryAttempt > 0 ? currentRunIndex : currentRunIndex + 1;
-    if (retryAttempt === 0) {
-      set({ currentRunIndex: nextIndex });
+    set({
+      editingJobId: id,
+      formName: job.name,
+      formConfig: job.config,
+      targetRequest: job.request,
+      targetEnvVariables: job.environmentVariables,
+      activeTab: 'config',
+      isOpen: true,
+    });
+  },
+
+  saveJob: () => {
+    const { editingJobId, formName, formConfig, targetRequest, targetEnvVariables, jobs } = get();
+    if (!targetRequest) {
+      toast.error('No request specified.');
+      return '';
     }
 
-    const startTime = Date.now();
-    try {
-      const response = await sendRequest({
+    if (editingJobId) {
+      // Update existing job
+      const updatedJobs = jobs.map((j) => {
+        if (j.id === editingJobId) {
+          return {
+            ...j,
+            name: formName.trim() || j.name,
+            config: formConfig,
+            request: targetRequest,
+            environmentVariables: targetEnvVariables,
+            updatedAt: Date.now(),
+          };
+        }
+        return j;
+      });
+
+      set({ jobs: updatedJobs, isOpen: false });
+      toast.success(`Schedule "${formName}" updated`);
+      return editingJobId;
+    } else {
+      // Create new job
+      const newId = uuidv4();
+      const newJob: ScheduleJob = {
+        id: newId,
+        name: formName.trim() || `${targetRequest.method} ${targetRequest.url}`,
         request: targetRequest,
         environmentVariables: targetEnvVariables,
+        config: formConfig,
+        status: 'idle',
+        countdownSeconds: formConfig.intervalSeconds,
+        currentRunIndex: 0,
+        stats: createEmptyStats(),
+        logs: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      set({
+        jobs: [newJob, ...jobs],
+        selectedJobId: newId,
+        isOpen: false,
+      });
+
+      toast.success(`Schedule "${newJob.name}" created!`);
+      return newId;
+    }
+  },
+
+  deleteJob: (id) => {
+    get().stopJob(id);
+    const updated = get().jobs.filter((j) => j.id !== id);
+    set({
+      jobs: updated,
+      selectedJobId: updated.length > 0 ? updated[0].id : null,
+    });
+    toast.info('Schedule removed');
+  },
+
+  duplicateJob: (id) => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (!job) return;
+
+    const newJob: ScheduleJob = {
+      ...job,
+      id: uuidv4(),
+      name: `${job.name} (Copy)`,
+      status: 'idle',
+      countdownSeconds: job.config.intervalSeconds,
+      currentRunIndex: 0,
+      stats: createEmptyStats(),
+      logs: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    set({
+      jobs: [newJob, ...get().jobs],
+      selectedJobId: newJob.id,
+    });
+    toast.success(`Duplicated schedule as "${newJob.name}"`);
+  },
+
+  clearJobLogs: (id) => {
+    const updated = get().jobs.map((j) => {
+      if (j.id === id) {
+        return {
+          ...j,
+          logs: [],
+          stats: createEmptyStats(),
+          currentRunIndex: 0,
+        };
+      }
+      return j;
+    });
+    set({ jobs: updated });
+    toast.info('Execution logs cleared');
+  },
+
+  executeJobRun: async (id: string, retryAttempt: number = 0): Promise<boolean> => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (!job || !job.request) return false;
+
+    const nextIndex = retryAttempt > 0 ? job.currentRunIndex : job.currentRunIndex + 1;
+    const startTime = Date.now();
+
+    try {
+      const response = await sendRequest({
+        request: job.request,
+        environmentVariables: job.environmentVariables,
       });
 
       const isError = response.status >= 400 || response.status === 0;
@@ -161,8 +334,8 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         id: uuidv4(),
         runIndex: nextIndex,
         timestamp: Date.now(),
-        method: targetRequest.method,
-        url: targetRequest.url,
+        method: job.request.method,
+        url: job.request.url,
         status: response.status,
         statusText: response.statusText || (isError ? 'Error' : 'OK'),
         duration,
@@ -172,71 +345,72 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         retryAttempt,
       };
 
-      const newTotal = stats.totalRuns + 1;
-      const newSuccess = stats.successCount + (isError ? 0 : 1);
-      const newError = stats.errorCount + (isError ? 1 : 0);
-      const newRetry = stats.retryCount + (retryAttempt > 0 ? 1 : 0);
-      const newTotalDuration = stats.totalDurationMs + duration;
+      const newTotal = job.stats.totalRuns + 1;
+      const newSuccess = job.stats.successCount + (isError ? 0 : 1);
+      const newError = job.stats.errorCount + (isError ? 1 : 0);
+      const newRetry = job.stats.retryCount + (retryAttempt > 0 ? 1 : 0);
+      const newTotalDuration = job.stats.totalDurationMs + duration;
 
-      set({
-        logs: [logEntry, ...logs],
-        lastFailedLog: isError ? logEntry : null,
-        stats: {
-          totalRuns: newTotal,
-          successCount: newSuccess,
-          errorCount: newError,
-          retryCount: newRetry,
-          totalDurationMs: newTotalDuration,
-          avgDurationMs: Math.round(newTotalDuration / newTotal),
-          minDurationMs: Math.min(stats.minDurationMs, duration),
-          maxDurationMs: Math.max(stats.maxDurationMs, duration),
-        },
+      const updatedJobs = get().jobs.map((j) => {
+        if (j.id === id) {
+          return {
+            ...j,
+            currentRunIndex: nextIndex,
+            logs: [logEntry, ...j.logs],
+            stats: {
+              totalRuns: newTotal,
+              successCount: newSuccess,
+              errorCount: newError,
+              retryCount: newRetry,
+              totalDurationMs: newTotalDuration,
+              avgDurationMs: Math.round(newTotalDuration / newTotal),
+              minDurationMs: Math.min(j.stats.minDurationMs, duration),
+              maxDurationMs: Math.max(j.stats.maxDurationMs, duration),
+            },
+          };
+        }
+        return j;
       });
 
+      set({ jobs: updatedJobs });
+
       if (isError) {
-        // Auto-retry logic
-        if (config.autoRetry && retryAttempt < config.maxRetries) {
+        if (job.config.autoRetry && retryAttempt < job.config.maxRetries) {
           const nextAttempt = retryAttempt + 1;
-          set({ isRetrying: true });
           toast.warning(
-            `Request failed (${response.status}). Retrying attempt ${nextAttempt}/${config.maxRetries} in ${config.retryDelaySeconds}s...`,
+            `"${job.name}" failed (${response.status}). Retrying attempt ${nextAttempt}/${job.config.maxRetries} in ${job.config.retryDelaySeconds}s...`,
             {
               action: {
                 label: 'Retry Now',
-                onClick: () => get().executeSingleRun(nextAttempt),
+                onClick: () => get().executeJobRun(id, nextAttempt),
               },
             }
           );
 
-          if (retryTimeout) clearTimeout(retryTimeout);
-          retryTimeout = setTimeout(async () => {
-            set({ isRetrying: false });
-            await get().executeSingleRun(nextAttempt);
-          }, config.retryDelaySeconds * 1000);
+          if (jobRetryTimeouts.has(id)) clearTimeout(jobRetryTimeouts.get(id));
+          const t = setTimeout(async () => {
+            await get().executeJobRun(id, nextAttempt);
+          }, job.config.retryDelaySeconds * 1000);
+          jobRetryTimeouts.set(id, t);
           return false;
         } else {
-          // Exhausted or no auto-retry: prompt user
-          toast.error(
-            `Request failed with HTTP ${response.status}.`,
-            {
-              action: {
-                label: 'Try Again',
-                onClick: () => get().retryLastFailedRun(),
-              },
-            }
-          );
+          toast.error(`"${job.name}" returned HTTP ${response.status}.`, {
+            action: {
+              label: 'Try Again',
+              onClick: () => get().retryJobFailedRun(id),
+            },
+          });
 
-          if (config.stopOnError) {
-            get().stopJob(`Stopped automatically due to HTTP error (${response.status})`);
+          if (job.config.stopOnError) {
+            get().stopJob(id, `Stopped due to error (${response.status})`);
             return false;
           }
         }
       }
 
-      // Check max iterations reached for interval runs
-      if (config.type === 'interval' && config.maxRuns > 0 && nextIndex >= config.maxRuns) {
-        get().stopJob(`Completed all ${config.maxRuns} scheduled runs`);
-        toast.success(`Completed all ${config.maxRuns} runs!`);
+      if (job.config.type === 'interval' && job.config.maxRuns > 0 && nextIndex >= job.config.maxRuns) {
+        get().stopJob(id, `Completed all ${job.config.maxRuns} scheduled runs`);
+        toast.success(`"${job.name}" finished ${job.config.maxRuns} runs!`);
       }
 
       return !isError;
@@ -245,10 +419,10 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         id: uuidv4(),
         runIndex: nextIndex,
         timestamp: Date.now(),
-        method: targetRequest.method,
-        url: targetRequest.url,
+        method: job.request.method,
+        url: job.request.url,
         status: 500,
-        statusText: 'Network Error',
+        statusText: 'Network Failure',
         duration: Date.now() - startTime,
         responseSize: 0,
         responseBody: err?.message || 'Connection failure',
@@ -256,178 +430,215 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
         retryAttempt,
       };
 
-      set({
-        logs: [logEntry, ...logs],
-        lastFailedLog: logEntry,
-        stats: {
-          ...stats,
-          totalRuns: stats.totalRuns + 1,
-          errorCount: stats.errorCount + 1,
-          retryCount: stats.retryCount + (retryAttempt > 0 ? 1 : 0),
-        },
+      const updatedJobs = get().jobs.map((j) => {
+        if (j.id === id) {
+          return {
+            ...j,
+            currentRunIndex: nextIndex,
+            logs: [logEntry, ...j.logs],
+            stats: {
+              ...j.stats,
+              totalRuns: j.stats.totalRuns + 1,
+              errorCount: j.stats.errorCount + 1,
+              retryCount: j.stats.retryCount + (retryAttempt > 0 ? 1 : 0),
+            },
+          };
+        }
+        return j;
       });
 
-      if (config.autoRetry && retryAttempt < config.maxRetries) {
+      set({ jobs: updatedJobs });
+
+      if (job.config.autoRetry && retryAttempt < job.config.maxRetries) {
         const nextAttempt = retryAttempt + 1;
-        set({ isRetrying: true });
         toast.warning(
-          `Connection error. Retrying attempt ${nextAttempt}/${config.maxRetries} in ${config.retryDelaySeconds}s...`,
+          `Connection failure on "${job.name}". Retrying in ${job.config.retryDelaySeconds}s...`,
           {
             action: {
               label: 'Retry Now',
-              onClick: () => get().executeSingleRun(nextAttempt),
+              onClick: () => get().executeJobRun(id, nextAttempt),
             },
           }
         );
 
-        if (retryTimeout) clearTimeout(retryTimeout);
-        retryTimeout = setTimeout(async () => {
-          set({ isRetrying: false });
-          await get().executeSingleRun(nextAttempt);
-        }, config.retryDelaySeconds * 1000);
+        if (jobRetryTimeouts.has(id)) clearTimeout(jobRetryTimeouts.get(id));
+        const t = setTimeout(async () => {
+          await get().executeJobRun(id, nextAttempt);
+        }, job.config.retryDelaySeconds * 1000);
+        jobRetryTimeouts.set(id, t);
       } else {
-        toast.error('Request failed due to network error.', {
+        toast.error(`"${job.name}" connection failed.`, {
           action: {
             label: 'Try Again',
-            onClick: () => get().retryLastFailedRun(),
+            onClick: () => get().retryJobFailedRun(id),
           },
         });
 
-        if (config.stopOnError) {
-          get().stopJob('Stopped due to connection failure');
+        if (job.config.stopOnError) {
+          get().stopJob(id, 'Stopped due to network failure');
         }
       }
       return false;
     }
   },
 
-  retryLastFailedRun: async () => {
+  retryJobFailedRun: async (id: string) => {
     toast.info('Retrying request now...');
-    await get().executeSingleRun(1);
+    await get().executeJobRun(id, 1);
   },
 
-  startJob: () => {
-    const { config, targetRequest } = get();
-    if (!targetRequest || !targetRequest.url) {
-      toast.error('Please specify a valid request URL before scheduling.');
+  startJob: (id: string) => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (!job || !job.request || !job.request.url) {
+      toast.error('Cannot start schedule: invalid target URL.');
       return;
     }
 
-    // Clear previous timers
-    if (timerInterval) clearInterval(timerInterval);
-    if (oneTimeTimeout) clearTimeout(oneTimeTimeout);
-    if (retryTimeout) clearTimeout(retryTimeout);
+    if (jobIntervals.has(id)) clearInterval(jobIntervals.get(id));
+    if (jobTimeouts.has(id)) clearTimeout(jobTimeouts.get(id));
+    if (jobRetryTimeouts.has(id)) clearTimeout(jobRetryTimeouts.get(id));
 
-    set({
-      status: 'running',
-      activeTab: 'runner',
-    });
+    // Update job status
+    set((state) => ({
+      jobs: state.jobs.map((j) => (j.id === id ? { ...j, status: 'running' } : j)),
+    }));
 
-    if (config.type === 'once') {
-      const delayMs = config.targetTimestamp
-        ? Math.max(0, config.targetTimestamp - Date.now())
-        : (config.delaySeconds || 10) * 1000;
+    if (job.config.type === 'once') {
+      const delayMs = job.config.targetTimestamp
+        ? Math.max(0, job.config.targetTimestamp - Date.now())
+        : (job.config.delaySeconds || 10) * 1000;
 
       const targetTime = Date.now() + delayMs;
-      nextTriggerTime = targetTime;
+      jobNextTriggers.set(id, targetTime);
 
-      set({ countdownSeconds: Math.ceil(delayMs / 1000) });
-
-      timerInterval = setInterval(() => {
-        const remaining = Math.max(0, Math.ceil((nextTriggerTime - Date.now()) / 1000));
-        set({ countdownSeconds: remaining });
-        if (remaining <= 0) {
-          if (timerInterval) clearInterval(timerInterval);
-        }
-      }, 500);
-
-      oneTimeTimeout = setTimeout(async () => {
-        await get().executeSingleRun(0);
-        get().stopJob('One-time schedule completed');
-        toast.success('Scheduled API request executed!');
-      }, delayMs);
-
-      toast.info(`Request scheduled to run in ${Math.ceil(delayMs / 1000)}s`);
-    } else if (config.type === 'daily') {
-      // Daily Schedule
-      const timeStr = config.dailyTime || '09:00';
-      const delayMs = getMsUntilDailyTime(timeStr);
-      nextTriggerTime = Date.now() + delayMs;
-      set({ countdownSeconds: Math.ceil(delayMs / 1000) });
-
-      timerInterval = setInterval(() => {
-        const remaining = Math.max(0, Math.ceil((nextTriggerTime - Date.now()) / 1000));
-        set({ countdownSeconds: remaining });
-      }, 1000);
-
-      const scheduleNextDay = () => {
-        const nextDelay = getMsUntilDailyTime(timeStr);
-        nextTriggerTime = Date.now() + nextDelay;
-        set({ countdownSeconds: Math.ceil(nextDelay / 1000) });
-        oneTimeTimeout = setTimeout(async () => {
-          await get().executeSingleRun(0);
-          scheduleNextDay();
-        }, nextDelay);
+      const updateCountdown = () => {
+        const remaining = Math.max(0, Math.ceil((targetTime - Date.now()) / 1000));
+        set((state) => ({
+          jobs: state.jobs.map((j) => (j.id === id ? { ...j, countdownSeconds: remaining } : j)),
+        }));
       };
 
-      oneTimeTimeout = setTimeout(async () => {
-        await get().executeSingleRun(0);
-        scheduleNextDay();
+      const interval = setInterval(updateCountdown, 500);
+      jobIntervals.set(id, interval);
+
+      const timeout = setTimeout(async () => {
+        await get().executeJobRun(id, 0);
+        get().stopJob(id, 'One-time execution completed');
       }, delayMs);
+      jobTimeouts.set(id, timeout);
 
-      toast.info(`Daily schedule active. Next trigger at ${timeStr} (in ${Math.round(delayMs / 60000)} min)`);
+      toast.info(`"${job.name}" scheduled to run in ${Math.ceil(delayMs / 1000)}s`);
+    } else if (job.config.type === 'daily') {
+      const timeStr = job.config.dailyTime || '09:00';
+      const delayMs = getMsUntilDailyTime(timeStr);
+      const targetTime = Date.now() + delayMs;
+      jobNextTriggers.set(id, targetTime);
+
+      const interval = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((targetTime - Date.now()) / 1000));
+        set((state) => ({
+          jobs: state.jobs.map((j) => (j.id === id ? { ...j, countdownSeconds: remaining } : j)),
+        }));
+      }, 1000);
+      jobIntervals.set(id, interval);
+
+      const scheduleDaily = () => {
+        const nextDelay = getMsUntilDailyTime(timeStr);
+        jobNextTriggers.set(id, Date.now() + nextDelay);
+        const timeout = setTimeout(async () => {
+          await get().executeJobRun(id, 0);
+          scheduleDaily();
+        }, nextDelay);
+        jobTimeouts.set(id, timeout);
+      };
+
+      const timeout = setTimeout(async () => {
+        await get().executeJobRun(id, 0);
+        scheduleDaily();
+      }, delayMs);
+      jobTimeouts.set(id, timeout);
+
+      toast.info(`"${job.name}" daily schedule active (@ ${timeStr})`);
     } else {
-      // Interval Runner Mode (supports 1 min up to 15+ hours)
-      const intervalSec = convertToSeconds(config.intervalValue, config.intervalUnit);
+      // Interval Runner (1 min to 15 hours)
+      const intervalSec = convertToSeconds(job.config.intervalValue, job.config.intervalUnit);
       const intervalMs = intervalSec * 1000;
-      nextTriggerTime = Date.now() + intervalMs;
-      set({ countdownSeconds: intervalSec });
+      let nextTrigger = Date.now() + intervalMs;
+      jobNextTriggers.set(id, nextTrigger);
 
-      // Run initial execution immediately
-      get().executeSingleRun(0);
+      set((state) => ({
+        jobs: state.jobs.map((j) => (j.id === id ? { ...j, countdownSeconds: intervalSec } : j)),
+      }));
 
-      timerInterval = setInterval(() => {
-        const current = get();
-        if (current.status !== 'running') return;
+      // Immediate first execution
+      get().executeJobRun(id, 0);
 
-        const remainingMs = nextTriggerTime - Date.now();
+      const interval = setInterval(() => {
+        const currentJob = get().jobs.find((j) => j.id === id);
+        if (!currentJob || currentJob.status !== 'running') return;
+
+        const remainingMs = nextTrigger - Date.now();
         const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-        set({ countdownSeconds: remainingSeconds });
+
+        set((state) => ({
+          jobs: state.jobs.map((j) => (j.id === id ? { ...j, countdownSeconds: remainingSeconds } : j)),
+        }));
 
         if (remainingMs <= 0) {
-          nextTriggerTime = Date.now() + intervalMs;
-          set({ countdownSeconds: intervalSec });
-          current.executeSingleRun(0);
+          nextTrigger = Date.now() + intervalMs;
+          jobNextTriggers.set(id, nextTrigger);
+          get().executeJobRun(id, 0);
         }
       }, 500);
 
-      toast.info(`Interval runner started (Every ${config.intervalValue} ${config.intervalUnit})`);
+      jobIntervals.set(id, interval);
+      toast.info(`"${job.name}" started (Every ${job.config.intervalValue} ${job.config.intervalUnit})`);
     }
   },
 
-  pauseJob: () => {
-    set({ status: 'paused' });
-    toast.info('Runner paused');
+  pauseJob: (id: string) => {
+    set((state) => ({
+      jobs: state.jobs.map((j) => (j.id === id ? { ...j, status: 'paused' } : j)),
+    }));
+    toast.info('Schedule paused');
   },
 
-  resumeJob: () => {
-    const { config } = get();
-    const intervalSec = convertToSeconds(config.intervalValue, config.intervalUnit);
+  resumeJob: (id: string) => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (!job) return;
+
+    const intervalSec = convertToSeconds(job.config.intervalValue, job.config.intervalUnit);
     const intervalMs = intervalSec * 1000;
-    nextTriggerTime = Date.now() + intervalMs;
-    set({ status: 'running', countdownSeconds: intervalSec });
-    toast.info('Runner resumed');
+    jobNextTriggers.set(id, Date.now() + intervalMs);
+
+    set((state) => ({
+      jobs: state.jobs.map((j) =>
+        j.id === id ? { ...j, status: 'running', countdownSeconds: intervalSec } : j
+      ),
+    }));
+    toast.info('Schedule resumed');
   },
 
-  stopJob: (reason) => {
-    if (timerInterval) clearInterval(timerInterval);
-    if (oneTimeTimeout) clearTimeout(oneTimeTimeout);
-    if (retryTimeout) clearTimeout(retryTimeout);
-    timerInterval = null;
-    oneTimeTimeout = null;
-    retryTimeout = null;
+  stopJob: (id: string, reason?: string) => {
+    if (jobIntervals.has(id)) {
+      clearInterval(jobIntervals.get(id));
+      jobIntervals.delete(id);
+    }
+    if (jobTimeouts.has(id)) {
+      clearTimeout(jobTimeouts.get(id));
+      jobTimeouts.delete(id);
+    }
+    if (jobRetryTimeouts.has(id)) {
+      clearTimeout(jobRetryTimeouts.get(id));
+      jobRetryTimeouts.delete(id);
+    }
 
-    set({ status: 'completed', countdownSeconds: 0, isRetrying: false });
+    set((state) => ({
+      jobs: state.jobs.map((j) =>
+        j.id === id ? { ...j, status: 'completed', countdownSeconds: 0 } : j
+      ),
+    }));
+
     if (reason) {
       toast.info(reason);
     }

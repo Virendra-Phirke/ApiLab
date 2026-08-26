@@ -12,6 +12,7 @@ import { SettingsDialog } from '@/components/workspace/settings/settings-dialog'
 import { CommandPalette } from '@/components/workspace/command-palette/command-palette';
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler';
 import { UserMenu } from '@/components/auth/user-menu';
+import { ScheduleDashboard } from '@/components/workspace/scheduler/schedule-dashboard';
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -26,7 +27,7 @@ import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 
 export default function WorkspacePage() {
   const { isInitializing } = useWorkspace();
-  const { sidebarOpen, setSidebarOpen } = useWorkspaceStore();
+  const { sidebarOpen, setSidebarOpen, mainView } = useWorkspaceStore();
   const { send, save, duplicate, createNew } = useRequest();
 
   // Sizing states
@@ -186,36 +187,40 @@ export default function WorkspacePage() {
           </>
         )}
 
-        {/* 2. Right Workspace Area (Vertical Resizable Request & Response) */}
-        <div
-          ref={containerRef}
-          className="flex-1 h-full min-h-0 min-w-0 flex flex-col overflow-hidden relative gap-1.5"
-        >
-          {/* Top: Request Builder */}
-          <section
-            style={{ height: `${requestSplitRatio}%` }}
-            className="w-full min-h-[140px] overflow-hidden flex flex-col bg-surface-panel rounded-xl card-shadow"
-          >
-            <RequestBuilder />
-          </section>
-
-          {/* Vertical Resize Drag Handle */}
+        {/* 2. Right Workspace Area (Schedule Dashboard or Vertical Split Request & Response) */}
+        {mainView === 'schedules' ? (
+          <ScheduleDashboard />
+        ) : (
           <div
-            onPointerDown={handleVerticalResizeStart}
-            className="h-[3px] w-full cursor-row-resize hover:bg-primary/50 transition-colors shrink-0 z-20 flex items-center justify-center group"
-            title="Drag to resize panels"
+            ref={containerRef}
+            className="flex-1 h-full min-h-0 min-w-0 flex flex-col overflow-hidden relative gap-1.5"
           >
-            <div className="w-8 h-[2px] rounded-full bg-transparent group-hover:bg-primary" />
-          </div>
+            {/* Top: Request Builder */}
+            <section
+              style={{ height: `${requestSplitRatio}%` }}
+              className="w-full min-h-[140px] overflow-hidden flex flex-col bg-surface-panel rounded-xl card-shadow"
+            >
+              <RequestBuilder />
+            </section>
 
-          {/* Bottom: Response Viewer */}
-          <section
-            style={{ height: `${100 - requestSplitRatio}%` }}
-            className="w-full min-h-[140px] overflow-hidden flex flex-col bg-surface-panel rounded-xl card-shadow"
-          >
-            <ResponseViewer />
-          </section>
-        </div>
+            {/* Vertical Resize Drag Handle */}
+            <div
+              onPointerDown={handleVerticalResizeStart}
+              className="h-[3px] w-full cursor-row-resize hover:bg-primary/50 transition-colors shrink-0 z-20 flex items-center justify-center group"
+              title="Drag to resize panels"
+            >
+              <div className="w-8 h-[2px] rounded-full bg-transparent group-hover:bg-primary" />
+            </div>
+
+            {/* Bottom: Response Viewer */}
+            <section
+              style={{ height: `${100 - requestSplitRatio}%` }}
+              className="w-full min-h-[140px] overflow-hidden flex flex-col bg-surface-panel rounded-xl card-shadow"
+            >
+              <ResponseViewer />
+            </section>
+          </div>
+        )}
       </main>
 
       {/* Global Modals */}

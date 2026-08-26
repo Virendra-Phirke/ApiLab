@@ -30,8 +30,10 @@ export function WorkspaceSidebar({
   onOpenEnvironments,
 }: SidebarProps) {
   const { sidebarView, setSidebarView, collections, history } = useWorkspaceStore();
-  const { status: schedulerStatus, logs } = useSchedulerStore();
+  const { jobs } = useSchedulerStore();
   const { createNew } = useRequest();
+
+  const isAnyRunning = jobs.some((j) => j.status === 'running');
 
   return (
     <aside className="flex flex-col h-full w-full bg-surface-sidebar text-foreground select-none overflow-hidden">
@@ -122,11 +124,11 @@ export function WorkspaceSidebar({
           >
             <Timer className="h-3 w-3 text-primary" />
             <span className="hidden sm:inline">Schedules</span>
-            {schedulerStatus === 'running' ? (
+            {isAnyRunning ? (
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-            ) : logs.length > 0 ? (
+            ) : jobs.length > 0 ? (
               <span className="text-[10px] font-mono opacity-70">
-                {logs.length}
+                {jobs.length}
               </span>
             ) : null}
           </button>

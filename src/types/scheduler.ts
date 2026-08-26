@@ -1,4 +1,5 @@
 import { HttpMethod, ApiRequest } from './request';
+import { EnvironmentVariable } from './environment';
 
 export type ScheduleType = 'once' | 'interval' | 'daily';
 export type ScheduleStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled';
@@ -10,10 +11,9 @@ export interface ScheduleJobConfig {
   targetTimestamp?: number;
   // For 'once': delay in seconds from trigger time
   delaySeconds?: number;
-  // For 'interval': value and unit
+  // For 'interval': value and unit (e.g. 5 minutes, 2 hours)
   intervalValue: number;
   intervalUnit: TimeUnit;
-  // Total interval converted to seconds
   intervalSeconds: number;
   // For 'daily': 24h format time string e.g. "09:30", "18:00"
   dailyTime?: string;
@@ -23,8 +23,8 @@ export interface ScheduleJobConfig {
   stopOnError: boolean;
   // Automatic Retry Strategy
   autoRetry: boolean;
-  maxRetries: number; // e.g. 1, 2, 3, 5
-  retryDelaySeconds: number; // e.g. 2, 5, 10
+  maxRetries: number;
+  retryDelaySeconds: number;
 }
 
 export interface ScheduleRunLog {
@@ -39,7 +39,7 @@ export interface ScheduleRunLog {
   responseSize: number;
   responseBody: string;
   isError: boolean;
-  retryAttempt?: number; // 0 for initial, 1, 2, 3 for retries
+  retryAttempt?: number;
 }
 
 export interface ScheduleStats {
@@ -51,4 +51,19 @@ export interface ScheduleStats {
   avgDurationMs: number;
   minDurationMs: number;
   maxDurationMs: number;
+}
+
+export interface ScheduleJob {
+  id: string;
+  name: string;
+  request: ApiRequest;
+  environmentVariables: EnvironmentVariable[];
+  config: ScheduleJobConfig;
+  status: ScheduleStatus;
+  countdownSeconds: number;
+  currentRunIndex: number;
+  stats: ScheduleStats;
+  logs: ScheduleRunLog[];
+  createdAt: number;
+  updatedAt: number;
 }

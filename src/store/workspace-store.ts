@@ -8,8 +8,13 @@ import { createDefaultRequest } from '@/types/request';
 
 export type SidebarView = 'collections' | 'history' | 'schedules';
 export type SidebarTab = 'collections' | 'history' | 'schedules';
+export type MainView = 'request' | 'schedules';
 
 interface WorkspaceState {
+  // Main view switcher ('request' builder vs full 'schedules' dashboard)
+  mainView: MainView;
+  setMainView: (view: MainView) => void;
+
   // Active request
   activeRequest: ApiRequest;
   activeRequestId: string | null;
@@ -59,6 +64,9 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   // Initial state
+  mainView: 'request',
+  setMainView: (mainView) => set({ mainView }),
+
   activeRequest: createDefaultRequest(),
   activeRequestId: null,
   isDirty: false,

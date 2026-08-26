@@ -30,8 +30,10 @@ export function UrlBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [sendFeedback, setSendFeedback] = useState<'idle' | 'success' | 'error'>('idle');
-  const { activeRequest, response, environments, activeEnvironmentId } = useWorkspaceStore();
-  const { setIsOpen: setSchedulerOpen, setTargetRequest, status: schedulerStatus, countdownSeconds } = useSchedulerStore();
+  const { activeRequest, response, environments, activeEnvironmentId, setMainView } = useWorkspaceStore();
+  const { prepareNewJob, jobs } = useSchedulerStore();
+
+  const activeRunningJob = jobs.find((j) => j.status === 'running');
 
   // Watch response to show temporary success/error feedback on Send button
   useEffect(() => {
@@ -75,8 +77,7 @@ export function UrlBar({
 
   const handleOpenScheduler = () => {
     const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
-    setTargetRequest(activeRequest, activeEnv?.variables || []);
-    setSchedulerOpen(true);
+    prepareNewJob(activeRequest, activeEnv?.variables || []);
   };
 
   return (
@@ -120,15 +121,15 @@ export function UrlBar({
         </div>
 
         {/* Active Schedule Runner Pulsing Badge */}
-        {schedulerStatus === 'running' && (
+        {activeRunningJob && (
           <button
             type="button"
-            onClick={handleOpenScheduler}
+            onClick={() => setMainView('schedules')}
             className="h-9 px-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer animate-pulse hover:bg-emerald-500/25 transition-all shrink-0"
-            title="Auto-runner is currently active. Click to view live monitor."
+            title={`"${activeRunningJob.name}" is running. Click to view live studio.`}
           >
             <Activity className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Next in {countdownSeconds}s</span>
+            <span className="hidden sm:inline">{activeRunningJob.name}: {activeRunningJob.countdownSeconds}s</span>
           </button>
         )}
 
