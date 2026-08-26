@@ -72,6 +72,7 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
       } else {
         toast.success(`Welcome back, ${cleanUser}!`);
         handleOpenChange(false);
+        setTimeout(() => window.location.reload(), 350);
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication service error. Please try again.');
@@ -116,6 +117,7 @@ export function AuthModal({ open, onOpenChange, defaultMode = 'signin' }: AuthMo
       } else {
         toast.success(`Account created! Welcome to ApiLab, ${cleanUser}.`);
         handleOpenChange(false);
+        setTimeout(() => window.location.reload(), 350);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to create account.');
